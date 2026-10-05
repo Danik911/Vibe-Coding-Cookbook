@@ -1,0 +1,42 @@
+---
+name: managing-known-issues
+description: "Maintains the issue catalog (docs/issues/ISSUE-CATALOG.md plus one ISSUE-NNN file per issue): search before creating, reuse or extend matching records, create new ones from the template, record root cause and fix, keep the index consistent. Use when a defect needs recording, when checking whether a bug is already known, or when updating an issue's status."
+---
+
+# Managing known issues
+
+The catalog is the project's memory of defects: a new session or subagent forgets everything, the catalog does not.
+The planner and debugger search it first, so nobody debugs the same problem twice. <!-- if:full -->
+Search it before planning a change or debugging, so nobody debugs the same problem twice. <!-- if:lite -->
+It stays small and factual: an index plus one short file per issue.
+
+## What counts as an issue
+A defect found **outside** the current task's RED tests, or a defect that needed **≥ 2 debugging attempts**.
+A RED test failing during its own task is expected work, not an issue.
+
+## Who writes
+The developer, debugger, doc-keeper and main thread. The planner, tester and reviewer only reference issues. <!-- if:full -->
+`guard.py` refuses writes to `docs/issues/` from the planner, tester and reviewer. <!-- if:full --> <!-- if:guard -->
+The agent, in the same change that found or fixed the defect. <!-- if:lite -->
+
+## Files
+- `docs/issues/ISSUE-CATALOG.md`: a `Next ID: ISSUE-NNN` line and one table row per issue:
+  `| ID | Title | Status | Area | File |`. No narrative, no dated update blocks.
+- `docs/issues/ISSUE-NNN-short-slug.md`: copied from `docs/issues/ISSUE-TEMPLATE.md`, at most 150 lines.
+
+## Workflow
+1. **Search first**: grep the catalog and the issue files for the symptom, error text, file and area.
+   Record `Matched: ISSUE-NNN` or `no-match` in your report.
+2. **Match** (same symptom, cause or scope) → update that file: edit the facts in place, add one dated line to its
+   Log, update the catalog row if the status changed. Never create a duplicate.
+3. **No match** → take the `Next ID`, create the file from the template, add the catalog row, increment `Next ID`.
+4. **Fixed** → fill in root cause, fix (files, task) and verification evidence; status `FIX-PENDING-VERIFICATION`.
+   Only the user's confirmation moves it to `RESOLVED`.
+5. **Related issues** → cross-link them in both files.
+
+## Statuses
+`OPEN` → `FIX-PENDING-VERIFICATION` → `RESOLVED`, or `WONT-FIX` (with the reason and who decided).
+
+## Boundary
+This skill decides which record owns a problem. Finding out why it happens is the debugger's job. <!-- if:full -->
+This skill decides which record owns a problem. Finding out why it happens is debugging, a separate step. <!-- if:lite -->

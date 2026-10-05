@@ -1,0 +1,82 @@
+---
+name: task
+description: Runs one change end to end - proposes a FULL, LIGHT or TRIVIAL path, then spec, failing RED tests, implementation, verification, review and docs, with user approval gates and local checkpoint commits. Use when the user asks to build, change or fix functionality, or types /task.
+argument-hint: "<what to build, change or fix>"
+---
+
+# /task — one change, end to end
+
+You, the main thread, orchestrate. Subagents do the work; you pass exact paths, check every artifact and keep the
+user in control. During a task you write only inside `tasks/NNN-slug/` (plus the instruction-file edits the
+doc-keeper proposes, with the user's approval). Never "just fix" code yourself mid-task.
+
+Request: **$ARGUMENTS** (empty → ask the user what to build).
+
+## 0. Preconditions
+1. `git status --short` is clean. Otherwise show it and ask the user how to proceed.
+2. The test command (instructions file › Commands) is "not set up yet", or it stops with an import or collection
+   error because no test exists yet → only the bootstrap (§5) is possible. A built-in runner such as `unittest`
+   counts as set up once one test file exists.
+3. Next free number → folder `tasks/NNN-slug/` (3 digits, kebab-case slug; `000-setup` is the setup record).
+   **T** below means that folder.
+4. `{{PYTHON_CMD}} .claude/hooks/guard.py check` prints `guard check: OK`. Otherwise stop and show the output (this also proves the guard runs). <!-- if:guard -->
+
+## G0 — choose the path (ask the user; recommend one)
+- **FULL** — the default. When in doubt, FULL: a skipped step costs more than it saves.
+- **LIGHT** — ≤ ~50 non-test lines, ≤ 3 files, no new dependency, folder, ADR or auth surface.
+- **TRIVIAL** — copy, typo, docs only or a config value; no new files; no tests touched. Edit directly, run the
+  relevant tests, ask the user to confirm. Done.
+
+## 1. FULL path
+| # | Stage | Call | Then |
+|---|---|---|---|
+| 1 | Spec | `planner`: request + answers, path `T/spec.md` | NEEDS-INPUT → ask the user, re-run. **G1: the user approves the spec.** |
+| 2 | RED | `tester`, mode RED: T | Re-run the tests yourself: failing IDs = exactly the new tests, everything else green. **G2: the user approves** (list any changed committed tests). Commit `task-NNN: RED tests approved`; note the SHA. |
+| 3 | Build | `developer`: T, RED SHA | TEST-DISPUTE → §3. BLOCKED → show the user. Re-run the tests yourself. |
+| 4 | Verify | `tester`, mode VERIFY: T, RED SHA | PASS → 6. PARTIAL / FAIL → 5. |
+| 5 | Debug | `debugger`: T, RED SHA, round (max 2), then VERIFY again | Still failing after round 2 → stop; the user decides. |
+| 6 | Review | `reviewer`: T, RED SHA | CHANGES → developer fixes Critical/Important only → VERIFY → reviewer, one round; then the user decides. |
+| 7 | Docs | `doc-keeper`: T, RED SHA | Apply its proposed instruction-file edits only with the user's approval. |
+| 8 | Done | you | Every artifact present with a valid verdict. **G3: the user verifies** end to end — never claim done before. Commit `task-NNN: done`. |
+
+## 2. Every stage
+- One writer at a time: start the next agent only after the previous one has returned.
+- Call the Agent tool with `subagent_type` = the role and **no `name`**.
+- A `name` makes hooks report the instance name instead of the role, so `guard.py` could not tell who is writing. <!-- if:guard -->
+- The prompt carries everything: exact paths, RED SHA, mode, round and the user's decisions. Subagents know nothing
+  of this conversation.
+- Check the artifact: it exists, has ≤ 300 lines, line 1 is `Verdict: <TOKEN>` with a token allowed for that role
+  (`tasks/README.md`), and the final reply is `<VERDICT> <path>`. Anything else → stop and report.
+- Compare `git status --short` before and after: every new or changed path must fit the role (catches shell writes).
+- From the developer on, run `{{PYTHON_CMD}} .claude/hooks/guard.py check --since <RED>` after each stage; any finding → stop and show it. <!-- if:guard -->
+- Tell the user one line per stage: stage, verdict, artifact path.
+
+## 3. TEST-DISPUTE
+Show the dispute (test, AC, evidence, proposed change) and let the user decide:
+- **Keep the test** → re-run the developer with that ruling.
+- **Amend** → the tester makes the scoped change, the user approves the diff, commit `task-NNN: RED amended`, resume.
+
+## 4. LIGHT path
+1. Write a mini `T/spec.md` yourself (goal, ≤ 3 ACs, budget) from `assets/spec-template.md`.
+2. `tester` RED → **one gate** for spec and tests together → commit `task-NNN: RED tests approved`.
+3. `developer` → re-run the tests yourself.
+4. `reviewer` only if the diff exceeds 50 lines or touches dependencies, config or tests.
+5. `doc-keeper` only if a directory was added or removed or documented behaviour changed. G3 → commit
+   `task-NNN: done`.
+
+## 5. Bootstrap (task 001, when no test runs yet)
+In the main thread with the user; skip every step the setup already did (`tasks/000-setup/setup.md` says which).
+1. The stack chosen at setup is decided: record it as ADR-0001 from `docs/architecture/decisions/0000-template.md`
+   if it has no ADR yet. Do not decide it again; only a new choice needs options and the user's decision.
+2. Scaffold with the official tool if the stack needs one. A built-in test runner (for example `unittest`) needs no
+   install: create the test folder with one smoke test that passes.
+3. Fill in whatever is still missing: the *Commands* section, the PROJECT_STRUCTURE rows, `permissions.allow` for
+   the test and lint commands. Remove agent-instruction files a scaffolder added that duplicate this setup.
+4. The smoke test passing is the new baseline. Commit `task-001: bootstrap` after the user's approval.
+
+## 6. Final summary
+Task folder, path taken, verdict per stage, commits made, what the user must check (G3), open risks.
+
+## 7. Parallel work
+Only once single tasks run smoothly: each parallel task gets its own branch and `git worktree` with its own session
+running `/task`; a task starts only when the tasks it depends on are merged, and every gate stays with the user.

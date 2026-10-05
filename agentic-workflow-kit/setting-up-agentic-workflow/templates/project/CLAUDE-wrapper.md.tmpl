@@ -1,0 +1,23 @@
+@AGENTS.md
+
+## Claude Code
+The shared rules are in `AGENTS.md`, imported above: Claude Code reads `AGENTS.md` by itself only when there is no
+`CLAUDE.md`. This section adds what is specific to Claude Code.
+- **Plan mode:** press Shift+Tab until the status line shows plan mode, and start every change there. <!-- if:lite -->
+- **`/task`** runs the task workflow. It starts each role with the Agent tool, `subagent_type` = the role and never <!-- if:full -->
+  a `name`; the prompt carries every path and decision, because a subagent sees nothing of the conversation. <!-- if:full -->
+- **Subagents:** the 6 roles in `.claude/agents/`. Each has `disallowedTools: Agent`, so only the main thread <!-- if:full -->
+  delegates. <!-- if:full -->
+- **Skills:** `/task`; `grill-me` interviews the user one question at a time before a PRP, an ADR or a spec; <!-- if:full -->
+  `managing-known-issues` keeps the issue catalog in `docs/issues/`. <!-- if:full -->
+- **Skills:** `grill-me` interviews the user one question at a time before a PRP, an ADR or a spec; <!-- if:lite --> <!-- if:skills -->
+  `managing-known-issues` keeps the issue catalog in `docs/issues/`. <!-- if:lite --> <!-- if:skills -->
+- **Rules:** `.claude/rules/tests.md` has no `paths:`, so it is always loaded.
+- **Setup files** (`CLAUDE.md`, `AGENTS.md`, `.claude/`, `.mcp.json`) change only with the user's approval.
+- **Hooks** (`guard.py`, wired in `.claude/settings.json` or, on mixed-OS teams, in each person's `.claude/settings.local.json` as `tasks/000-setup/setup.md` explains; settings in `.claude/hooks/guard.config.json`): it blocks subagent writes to protected paths or outside a role's paths, edits to committed tests by any subagent but the tester, and files growing past their size limit. <!-- if:guard --> <!-- if:full -->
+- **Hooks** (`guard.py`, wired in `.claude/settings.json` or, on mixed-OS teams, in each person's `.claude/settings.local.json` as `tasks/000-setup/setup.md` explains; settings in `.claude/hooks/guard.config.json`): it blocks subagent writes to protected paths and to committed tests, and files growing past their size limit. <!-- if:guard --> <!-- if:lite -->
+- `guard.py` asks the user before main-thread edits to committed tests and protected paths; in bypass mode it turns these asks into denials. At the end of a turn it sends a subagent back once if it grew an oversized file or changed a committed test it may not edit, even through the shell. <!-- if:guard -->
+- When `guard.py` blocks, follow its message; never retry the same thing through the shell. If `guard.py` itself errors, stop and tell the user: it fails closed, and can be switched off in `/hooks` if it is broken. <!-- if:guard -->
+
+## Project structure
+@docs/architecture/PROJECT_STRUCTURE.md

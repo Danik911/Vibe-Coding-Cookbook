@@ -1,0 +1,34 @@
+{
+  "_comment": [
+    "Template defaults for guard.py (its docstring documents every key). scripts/render.py generates the installed file from them:",
+    "it replaces src/** and tests/** with the project's folders, adds the user's owned paths to protected, and sets roles per level.",
+    "Patterns: fnmatch on the lowercase repo-relative path with forward slashes; '*' also matches '/'. size_limits: [pattern, warn lines, block lines], first match wins."
+  ],
+  "roles": {
+    "planner": ["tasks/*/spec.md"],
+    "tester": ["tests/**", "tasks/*/tests.md", "tasks/*/verify.md", "tasks/*/evidence/**"],
+    "developer": ["src/**", "tests/**", "tasks/*/dev.md", "docs/issues/**"],
+    "debugger": ["src/**", "tests/**", "tasks/*/debug.md", "tasks/*/evidence/**", "docs/issues/**"],
+    "reviewer": ["tasks/*/review.md"],
+    "doc-keeper": ["docs/**", "README.md", "*/README.md", "tasks/*/docs.md"]
+  },
+  "unknown_subagents": "read-only",
+  "protected": [
+    "CLAUDE.md", "*/CLAUDE.md", "AGENTS.md", "*/AGENTS.md", ".claude/**", ".mcp.json", ".git/**",
+    ".github/copilot-instructions.md", ".github/instructions/**", ".github/agents/**", ".github/skills/**",
+    ".github/hooks/**", ".cursor/**", ".codex/**", ".agents/**",
+    ".github/workflows/**", "Dockerfile", "*/Dockerfile", "compose.yaml", "docker-compose.yml", "infra/**", "*.tf",
+    ".env", ".env.*", "*/.env", "*/.env.*"
+  ],
+  "tests": ["tests/**", "*/tests/**", "test_*.py", "*/test_*.py", "*.test.ts", "*.spec.ts"],
+  "test_writers": ["tester"],
+  "size_limits": [
+    ["CLAUDE.md", 150, 200],
+    ["AGENTS.md", 150, 200],
+    ["tasks/*", 150, 300],
+    ["docs/issues/ISSUE-*.md", 100, 150],
+    ["*", 500, 1000]
+  ],
+  "size_exempt": ["*.lock", "package-lock.json", "*/fixtures/**", "*/migrations/**", "*/generated/**"],
+  "sized_extensions": [".py", ".ts", ".tsx", ".js", ".jsx", ".java", ".cs", ".go", ".rb", ".md", ".sql", ".css"]
+}

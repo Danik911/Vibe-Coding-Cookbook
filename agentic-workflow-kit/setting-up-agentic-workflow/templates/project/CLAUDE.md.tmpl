@@ -1,0 +1,123 @@
+# {{PROJECT_NAME}} — Claude Code guide
+
+<!-- Maintainers: keep this file short (under 200 lines). Each rule lives here once; other files refer to it. -->
+
+## Project
+{{PROJECT_PURPOSE}}
+- **Stack:** {{STACK}}. Decisions are ADRs in `docs/architecture/decisions/`.
+- **Product intent:** `docs/product/`: raw inputs, `PRODUCT_SPEC.md`, and one PRP per milestone (`PRP-NNN-slug.md`).
+  Task specs are cut from the current PRP's task table.
+
+## Product rules that shape code
+{{PRODUCT_RULES}}
+
+## Non-negotiables
+1. **Least code.** The best code is the code never written. Walk the reuse ladder: don't build → existing code →
+   built-in → mature package → managed service → new code. Build only what the acceptance criteria require: no
+   features, refactors or "improvements" beyond the ask, no helpers for one-off operations, no abstraction without two
+   real callers, no designing for hypothetical needs. Delete dead or unwired code in the same task.
+2. **IMPORTANT: tests are the spec.** The tester writes failing tests first (RED); they are locked at the RED commit. <!-- if:full -->
+2. **IMPORTANT: tests are the spec.** Failing tests come first (RED), and once committed they are locked. <!-- if:lite -->
+   Never weaken, skip, delete or re-mock a test and never hard-code values for test inputs. A test you believe is
+   wrong becomes `TEST-DISPUTE: <test> | <AC-n> | evidence | proposed change` for the user to decide.
+   Details: `.claude/rules/tests.md`.
+3. **Green means green.** Compare the set of failing test IDs with the baseline, never the counts. A red baseline
+   is never normal.
+4. **Architecture.** Follow `docs/architecture/ARCHITECTURE.md` › Principles and the accepted ADRs. Folders are named
+   by what they are; no `misc/` or `helpers/` dumping grounds. Changing a principle takes an ADR the user approves.
+5. **File size.** Split by responsibility before a file reaches 500 lines. Shrinking is always allowed.
+   `guard.py` blocks growth above 1000 lines (CLAUDE.md 200, task files 300, issue files 150). <!-- if:guard -->
+6. **Your knowledge is stale.** Before using a third-party API, CLI flag or config key not yet verified in this repo:
+   installed version → current official docs (Context7 or the vendor's site); record URL, version and date in the
+   spec or report. Registry-check every new package. Never keep a deprecated API "for consistency".
+7. **Canonical locations only** (table below). No summary, notes or report files anywhere else.
+8. **Docs describe the current state.** Update them in the same task, in place, without dated "update" blocks;
+   history lives in git and `tasks/`.
+9. **The user decides.** Ask when unsure; never guess. For stack and architecture, bring 2–3 options, least code
+   first, with evidence; the user picks; record an ADR from `docs/architecture/decisions/0000-template.md`.
+   Never claim a task is done before the user has confirmed it.
+10. **No fallbacks.** Fail loudly with full diagnostics: no silent fallbacks, default values or swallowed errors.
+    Sample data only through an explicit, visibly labelled mode, never as a silent substitute when a real source fails.
+11. **What counts as an issue:** a defect found outside the current task's RED tests, or one that needed ≥ 2
+    debugging attempts. Record it in `docs/issues/`: search the catalog first, one record per problem.
+    The `managing-known-issues` skill has the steps. <!-- if:skills -->
+12. **Only the 6 roles write**, one at a time, orchestrated by `/task`: planner, tester, developer, debugger, <!-- if:full -->
+    reviewer, doc-keeper. Any other subagent is read-only in this project. <!-- if:full -->
+
+## Canonical locations
+| Artifact | Path | Written by |
+|---|---|---|
+| Raw inputs, product spec, PRPs | `docs/product/` (`inputs/`, `PRODUCT_SPEC.md`, `PRP-NNN-slug.md`) | main thread with the user; doc-keeper | <!-- if:full -->
+| Raw inputs, product spec, PRPs | `docs/product/` (`inputs/`, `PRODUCT_SPEC.md`, `PRP-NNN-slug.md`) | the agent with the user | <!-- if:lite -->
+| Source code | {{SOURCE_DIRS}} | developer, debugger | <!-- if:full -->
+| Source code | {{SOURCE_DIRS}} | the agent | <!-- if:lite -->
+| Tests and test infrastructure | {{TEST_DIRS}} | tester (new test files: also developer, debugger) | <!-- if:full -->
+| Tests and test infrastructure | {{TEST_DIRS}} | the agent, before the code; committed tests only with the user's approval | <!-- if:lite -->
+| Architecture index, principles, topic docs | `docs/architecture/ARCHITECTURE.md`, `docs/architecture/*.md` | doc-keeper | <!-- if:full -->
+| Project structure | `docs/architecture/PROJECT_STRUCTURE.md` | doc-keeper | <!-- if:full -->
+| Architecture, principles, project structure | `docs/architecture/ARCHITECTURE.md`, `PROJECT_STRUCTURE.md`, topic docs | the agent, in the change that makes them untrue | <!-- if:lite -->
+| Decisions (ADRs) | `docs/architecture/decisions/NNNN-slug.md` + `README.md` index | main thread with the user; doc-keeper indexes | <!-- if:full -->
+| Decisions (ADRs) | `docs/architecture/decisions/NNNN-slug.md` + `README.md` index | the agent, after the user decides | <!-- if:lite -->
+| Issues | `docs/issues/ISSUE-CATALOG.md` (index), `docs/issues/ISSUE-NNN-slug.md` | developer, debugger, doc-keeper, main thread | <!-- if:full -->
+| Issues | `docs/issues/ISSUE-CATALOG.md` (index), `docs/issues/ISSUE-NNN-slug.md` | the agent | <!-- if:lite -->
+| Rationale for these rules | `docs/workflow/LESSONS_LEARNED.md` | main thread with the user | <!-- if:full -->
+| Rationale for these rules | `docs/workflow/LESSONS_LEARNED.md` | the agent with the user | <!-- if:lite -->
+| Setup record and first test baseline | `tasks/000-setup/setup.md` | the setup; not edited afterwards |
+| Task spec | `tasks/NNN-slug/spec.md` | planner (main thread for LIGHT) | <!-- if:full -->
+| Task spec, for anything bigger than a quick fix | `tasks/NNN-slug/spec.md` | the agent; the user approves it | <!-- if:lite -->
+| Test map, verification | `tasks/NNN-slug/tests.md`, `verify.md` | tester | <!-- if:full -->
+| Screenshots and logs | `tasks/NNN-slug/evidence/` | tester, debugger | <!-- if:full -->
+| Screenshots and logs | `tasks/NNN-slug/evidence/` | the agent | <!-- if:lite -->
+| Implementation / debug reports | `tasks/NNN-slug/dev.md`, `debug.md` | developer, debugger | <!-- if:full -->
+| Review / docs reports | `tasks/NNN-slug/review.md`, `docs.md` | reviewer, doc-keeper | <!-- if:full -->
+| Claude Code setup | `CLAUDE.md`, `.claude/`, `.mcp.json` | only with the user's approval |
+| Files the user owns | {{OWNED_PATHS}} | the user; an agent only with the user's approval, and `.env` is never read |
+
+## Workflow
+- Every change of behaviour goes through `/task`; it proposes FULL, LIGHT or TRIVIAL and the user confirms. <!-- if:full -->
+- FULL: planner → **G1** user approves the spec → tester RED → **G2** user approves the tests → commit <!-- if:full -->
+  `task-NNN: RED tests approved` → developer → tester VERIFY → debugger (≤ 2 rounds, ≤ 5 attempts each) → <!-- if:full -->
+  reviewer → doc-keeper → **G3** user verifies → commit `task-NNN: done`. <!-- if:full -->
+- LIGHT: the main thread writes a mini-spec; one gate for spec and tests; reviewer and doc-keeper only when needed. <!-- if:full -->
+- TRIVIAL (copy, typo, docs only, a config value): the main thread edits directly and the user confirms. <!-- if:full -->
+- During `/task` the main thread writes only inside the task folder. Subagents get exact paths, and never a `name`. <!-- if:full -->
+- Every subagent leaves one report in the task folder: line 1 `Verdict: <TOKEN>`, at most 300 lines. Its final <!-- if:full -->
+  reply is `<VERDICT> <path>`. <!-- if:full -->
+- Commits are local checkpoints, each after the user's approval. Never push: that is the user's job. <!-- if:full -->
+- One task at a time until the loop is routine (`/task` › Parallel work). <!-- if:full -->
+- Start every change in plan mode (Shift+Tab): goal, done when, out of scope, how to check. Build only after the user approves the plan. <!-- if:lite -->
+- For anything bigger than a quick fix, save the approved plan as `tasks/NNN-slug/spec.md`. <!-- if:lite -->
+  Copy it from `tasks/SPEC-TEMPLATE.md`. <!-- if:lite --> <!-- if:skills -->
+- Failing tests first ("use red/green TDD"): write the tests, run them and show they fail for the right reason, then write the smallest code that makes them pass. <!-- if:lite -->
+- One small task at a time. Before you report, run the full suite and compare the set of failing test IDs with the last run (the first baseline is in `tasks/000-setup/setup.md`). <!-- if:lite -->
+- The user verifies each change before it is committed. Commits are local checkpoints, each after the user's approval. Never push: that is the user's job. <!-- if:lite -->
+<!-- if:skills -->
+## Skills <!-- if:skills -->
+- `/task`: the workflow above. <!-- if:full -->
+- `grill-me`: interviews the user one question at a time before a PRP, an ADR or a spec. <!-- if:skills -->
+- `managing-known-issues`: the issue catalog in `docs/issues/`. <!-- if:skills -->
+<!-- if:guard -->
+## Guardrails (`.claude/hooks/guard.py`, settings in `.claude/hooks/guard.config.json`) <!-- if:guard -->
+- **Blocks** (`guard.py`): subagent writes to protected paths or outside the subagent's role paths (other subagents are read-only); edits to committed tests by any subagent but the tester; files growing past their size limit. <!-- if:guard --> <!-- if:full -->
+- **Blocks** (`guard.py`): subagent writes to protected paths and to committed tests; files growing past their size limit. <!-- if:guard --> <!-- if:lite -->
+- **Asks the user** (`guard.py`): main-thread edits to committed tests and to protected paths (the setup files and the files the user owns, above). In bypass mode `guard.py` turns these asks into denials. <!-- if:guard -->
+- **At the end of a turn** (`guard.py`): a subagent that grew an oversized file or changed a committed test it may not edit, even through the shell, is sent back once; the main thread gets a message instead. <!-- if:guard -->
+- When `guard.py` blocks, follow its message; never retry the same thing through the shell. If `guard.py` itself errors, stop and tell the user: it fails closed, and can be switched off in `/hooks` if it is broken. <!-- if:guard -->
+
+## Dependencies
+Only those named in an approved spec or ADR, registry-verified and installed project-locally. Ask the user before
+every install. If an install fails, ask the user; never skip it or work around it.
+
+## Environment
+{{ENVIRONMENT}}
+- No absolute or machine-specific paths in setup files; hooks use `${CLAUDE_PROJECT_DIR}`. <!-- if:guard -->
+- No absolute or machine-specific paths in setup files. <!-- if:noguard -->
+
+## Commands
+- Tests: `{{TEST_COMMAND}}`
+- Lint: `{{LINT_COMMAND}}`
+- Run: `{{RUN_COMMAND}}`
+- Guard: `{{PYTHON_CMD}} .claude/hooks/guard.py check [--since <SHA>]` (oversized files, changed committed tests) · its tests `{{PYTHON_CMD}} -m unittest discover -s .claude/hooks/tests` (`guard.py`) <!-- if:guard -->
+
+## Project structure
+@docs/architecture/PROJECT_STRUCTURE.md
