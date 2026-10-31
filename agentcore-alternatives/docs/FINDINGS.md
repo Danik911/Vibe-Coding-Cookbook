@@ -1,0 +1,41 @@
+# Findings: traps found while building the gateway
+
+Each of these came up while building `diy_gateway` on FastMCP 4.1.4, `mcp` 2.3.0 and `cedarpy` 4.12.2 (31 October 2026), or in an independent code review afterwards. Most of them would have shipped silently. Each fixed one now has a guard: a test, or the live check in the README.
+
+| # | Trap | What happens | The fix here | Guarded by |
+|---|---|---|---|---|
+| 1 | **FastMCP's proxy forwards the caller's headers, `Authorization` included** | `ProxyClient` defaults to `forward_incoming_headers=True`, so the agent's key or a user's JWT reaches the upstream MCP server: the token passthrough the MCP spec forbids. The independent research found the same; FastMCP 3.x has no way to turn it off | `ProxyClient(..., forward_incoming_headers=False)` in `targets.mcp_provider` | `test_the_callers_token_never_reaches_an_upstream_mcp_server` |
+| 2 | **FastMCP's OpenAPI tools copy the caller's other headers onto the API request** | `Authorization` and `Cookie` are left out, but a header such as `X-User-Id` reaches the app, which may trust it | A request hook (`drop_caller_headers`) removes every header copied from the caller | `test_the_app_gets_only_the_gateways_headers_not_the_callers` |
+| 3 | **Cedar ignores a policy that errors** | A `forbid` on `context.input.amount` with no amount, or a string amount, doesn't apply, and the call is allowed with `diagnostics.errors` set. Rego and CEL `deny` rules behave the same way | `deny_on_evaluation_errors`, a `payment-needs-amount` rule, and an optional strict schema | `test_a_payment_with_no_amount_is_refused`, `test_the_shipped_schema_refuses_unknown_tools_and_unexpected_arguments` |
+| 4 | **A float can't go into a Cedar request** | `cedarpy` returns `NoDecision` with a parse error for `1500.5`. An integer is a `Long`, so `greaterThan(decimal(...))` errors on it | Every number becomes a Cedar `decimal` (four places), as AgentCore does; out-of-range numbers are refused | `test_numbers_become_cedar_decimals_and_lists_become_sets`, `test_numbers_cedar_cant_hold_are_refused` |
+| 5 | **Listing tools with an empty input hides tools wrongly** | A fail-closed rule such as "no payment without an amount" hides `pay_claim` from the agent that may use it | Cedar partial evaluation with the input unknown: hide only what no input could unlock | `test_listing_hides_only_tools_no_input_could_unlock` |
+| 6 | **`langchain-mcp-adapters` and FastMCP 4 can't share an environment** | 0.3.2 pins `mcp<2`. 0.3.1 installs beside `mcp` 2.x but fails on import (`RequestContext`). The project is no longer maintained; its successor is `langchain[mcp]` (`langchain.mcp.MCPAdapter`, beta) | The agent example is its own uv project. An `mcp` 1.30 client works with the `mcp` 2.3 gateway | the live check in the README |
+| 7 | **FastMCP's session manager starts only once per app** | Under Mangum, which runs startup and shutdown on every Lambda request, a reused app fails on its second request | A fresh gateway per request, with config, secrets and documents cached | `test_the_handler_answers_twice_in_one_process_as_the_iam_caller` |
+| 8 | **An assumed role's ARN changes with every session** | `arn:aws:sts::<acct>:assumed-role/<role>/<session>` can't be named in a policy | The principal is the role's ARN; the account is an attribute | `test_an_assumed_role_session_is_named_by_its_role` |
+| 9 | **Cognito access tokens have no `aud`** | An audience check fails, and with no audience check any app client's token passes | `allowed_client_ids` and `required_claims: {token_use: access}` | `test_another_client_or_kind_of_token_is_refused` |
+| 10 | **FastMCP doesn't validate an OpenAPI tool's arguments** | A wrong type reaches the app, which refuses it (422); an unknown argument is silently dropped | The app stays the authority; `schema_file` makes the gateway refuse wrong types and unknown arguments first | `test_the_shipped_schema_refuses_unknown_tools_and_unexpected_arguments` |
+
+## Found by the independent code review
+
+A code-review sub-agent tried to break each security property and found eight more. All are fixed except the last, which is documented.
+
+| # | Trap | What happens | The fix here | Guarded by |
+|---|---|---|---|---|
+| 11 | **FastMCP also resolves hashed tool names** (`<12 hex>_<tool>`) that skip the transforms | The call reaches the upstream tool without the target prefix, so Cedar sees an action with no target group, and a forbid written on `undercover-context___<tool>` doesn't match | The middleware refuses any name that doesn't start with exactly one `<target><separator>`, in every mode | `test_a_name_outside_the_targets_prefixes_is_refused_in_any_mode` |
+| 12 | **A proxied MCP server's resources and prompts pass through** unprefixed, with no policy and no audit | Any authenticated caller could list and read them, even one the policy gives no tools | Targets expose tools only, as AgentCore Gateway does | `test_an_upstreams_resources_and_prompts_stay_behind_the_gateway` |
+| 13 | **FastMCP accepts a signed JWT with no `exp` forever**, and issuer and audience were optional | A stolen token never expires; a token from another issuer or for another service could pass | Tokens without `exp` are refused; `jwt` settings must name the issuer, and the audience or allowed clients | `test_a_token_with_no_expiry_is_refused`, `test_jwt_settings_must_name_the_issuer_and_the_audience_or_clients` |
+| 14 | **Cedar's JSON format reads `__extn` and `__entity` keys as typed values** | An argument `{"__extn": {"fn": "decimal", "arg": "1.0"}}` makes Cedar see 1.0, whatever the tool receives | Inputs with Cedar's reserved keys are refused | `test_keys_cedar_reserves_are_refused_so_a_caller_cant_forge_a_value` |
+| 15 | **Rounding to four places** | 1000.00004 became 1000.0000 and slipped under a limit of 1000 | Numbers with more than four decimal places are refused, not rounded | `test_numbers_cedar_cant_hold_exactly_are_refused` |
+| 16 | **Target names could hold the separator** (`a_` with `___`) | A tool could be attributed to the wrong target and its action group | Target names may hold only letters, digits and inner hyphens; the separator only `_ . : ~` | `test_names_that_could_put_a_tool_under_the_wrong_target_are_refused` |
+| 17 | **The schema rejected JWT agents** (Cognito) because of their `scopes` attribute | Every call from such an agent was denied under the strict schema (failing closed) | `scopes` is an optional attribute of `Agent` and `User` | `test_the_shipped_schema_takes_principals_from_jwts` |
+| 18 | **On Lambda, the token verifier and MCP proxies were rebuilt per request** | A JWKS fetch on every request, and the proxies' tool-list cache never used | `GatewayFactory` keeps them for the life of the process | `test_the_handler_answers_twice_in_one_process_as_the_iam_caller` |
+| 19 | **FastMCP's proxy still forwards the caller's MCP `_meta`** (progress tokens, trace context, application metadata) to an upstream MCP server | An upstream that trusts `_meta` could be fed values the caller chose. HTTP headers aren't forwarded | Not fixed: don't let an upstream MCP server make decisions from `_meta` | documented here |
+
+## Other things worth knowing
+
+- **The stack moved a major version in 2026.** FastMCP 4 sits on `mcp` 2.x and `httpx2`, not `httpx`. An `httpx.Auth` written for the course's AgentCore client won't plug into FastMCP 4: subclass `httpx2.Auth`, which has the same API. `aws/mcp-proxy-for-aws` (the SigV4 MCP client) pins FastMCP below 3.5.
+- **The MCP spec is now stateless** (2026-07-28): no `initialize` and no `Mcp-Session-Id`. FastMCP 4 follows the client's era, and an older client still works.
+- **Bedrock Agents classic and App Runner** closed to new customers in 2026.
+- **Bedrock Guardrails' inline prompt-attack filter doesn't scan tool results.** To screen what a tool returns, call `ApplyGuardrail` or `InvokeGuardrailChecks` yourself.
+- **On Windows,** an AWS profile that uses the new login credentials needs `botocore[crt]` for `ChatBedrockConverse`. `uv` may need `UV_LINK_MODE=copy` when the folder is under OneDrive.
+- **New Lambda Function URLs** need both `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction` for callers (since October 2025).

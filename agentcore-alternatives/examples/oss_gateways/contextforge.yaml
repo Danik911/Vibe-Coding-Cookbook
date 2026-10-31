@@ -1,0 +1,40 @@
+# IBM ContextForge (Apache-2.0, Python): a full gateway platform (DB, Redis, admin UI, RBAC, plugins).
+# Cedar or OPA run behind its Unified PDP plugin; the plugin passes tool arguments as context.tool_args.
+#
+# Syntax from the ContextForge repo as of 31 Oct 2026 (v1.1.0). NOT executed in this repo; test it.
+#   https://github.com/IBM/mcp-context-forge/blob/main/plugins/unified_pdp/README.md
+#   https://github.com/IBM/mcp-context-forge/blob/main/docs/docs/using/multi-auth-headers.md
+#   https://github.com/IBM/mcp-context-forge/blob/main/docs/docs/deployment/aws.md
+#
+# Differences from AgentCore and from diy_gateway:
+# - REST tools are registered one by one (no bulk OpenAPI import found); no outbound SigV4 found.
+# - Cedar runs in the cedar-agent sidecar (permitio/cedar-agent, last pushed Oct 2025).
+# - mode "permissive" is the nearest thing to log-only; its meaning under the newer CPEX plugin
+#   framework is UNVERIFIED. A ~20-line custom tool_pre_invoke plugin could call cedarpy instead.
+#
+# plugins/config.yaml
+plugins:
+  - name: "UnifiedPDPPlugin"
+    kind: "plugins.unified_pdp.unified_pdp.UnifiedPDPPlugin"
+    hooks: ["tool_pre_invoke", "resource_pre_fetch"]
+    mode: "enforce"                    # "permissive" = warn and continue
+    priority: 10
+    config:
+      engines:
+        - name: cedar
+          enabled: true
+          priority: 1
+          settings:
+            cedar_url: "http://localhost:8700"
+      combination_mode: "all_must_allow"
+      default_decision: "deny"
+
+# The Cedar policy loaded into cedar-agent (the action id is "tools.invoke.<tool name>"):
+#
+#   permit (principal, action, resource);
+#   forbid (principal, action == Action::"tools.invoke.pay-claim", resource)
+#     when { context.tool_args.amount > 1000 };
+#
+# A REST tool with the key header (POST /tools):
+#   {"name": "pay-claim", "url": "https://app.internal/api/claims/{claim_id}/payment", "request_type": "POST",
+#    "auth_type": "authheaders", "auth_headers": [{"key": "X-API-Key", "value": "<secret>"}]}

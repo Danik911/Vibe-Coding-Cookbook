@@ -1,0 +1,65 @@
+# agentgateway (Linux Foundation / AAIF, Apache-2.0, Rust), standalone mode.
+# The same two targets, JWT inbound, key injection, SigV4 to the context Lambda, and the payment rule.
+#
+# Syntax from the agentgateway docs as of 31 Oct 2026 (v1.7.0). NOT executed in this repo; test it.
+#   https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/mcp-authn/
+#   https://agentgateway.dev/docs/standalone/latest/documentation/configuration/security/backend-authn/
+#   https://agentgateway.dev/docs/standalone/latest/documentation/mcp/guardrails/processors/
+#   https://agentgateway.dev/docs/standalone/latest/integrations/mcp/servers/openapi/
+#
+# Run:  docker run -p 3000:3000 -v ${PWD}/config.yaml:/config.yaml -e UNDERCOVER_API_KEY \
+#         cr.agentgateway.dev/agentgateway -f /config.yaml
+#
+# Differences from AgentCore and from diy_gateway:
+# - Tools are named <target>_<tool> (one underscore), and target names can't contain "_".
+# - mcpAuthorization can't read tool arguments; the amount rule lives in mcpGuardrails.
+# - No Cedar, no log-only mode (log a would_deny field instead), no inbound SigV4.
+# - A guardrail rejection returns a tool result with isError: true, not a protocol error.
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+mcp:
+  port: 3000
+  prefixMode: always
+  policies:
+    mcpAuthentication:
+      mode: strict
+      issuer: https://<project-ref>.supabase.co/auth/v1
+      audiences: ["https://gateway.example.com/mcp"]
+      jwks:
+        url: https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json
+      resourceMetadata:
+        resource: https://gateway.example.com/mcp
+    mcpAuthorization:
+      rules:
+        - 'mcp.tool.target == "undercover-context"'
+        - 'mcp.tool.target == "undercover-app" && has(jwt.groups) && "claims-agent" in jwt.groups'
+    mcpGuardrails:
+      processors:
+        - kind: expression
+          condition: >-
+            mcp.tool.target == "undercover-app" && mcp.params.name == "pay_claim" &&
+            (!has(mcp.params.arguments.amount) || double(mcp.params.arguments.amount) > 1000.0)
+          reject: "Tool Execution Denied: payments over $1,000 need a handler's sign-off"
+          methods:
+            tools/call: request
+  targets:
+    - name: undercover-app
+      openapi:
+        host: app.internal:8000
+        schema:
+          url: http://app.internal:8000/api/agent/openapi.json
+      policies:
+        backendAuth:
+          key:
+            value: $UNDERCOVER_API_KEY            # from the environment (ECS can fill it from Secrets Manager)
+            location:
+              header:
+                name: X-API-Key
+                prefix: ""                         # UNVERIFIED: the docs show "Bearer " as the example
+    - name: undercover-context
+      mcp:
+        host: https://<url-id>.lambda-url.us-east-1.on.aws/mcp
+      policies:
+        backendAuth:
+          aws:
+            region: us-east-1
+            serviceName: lambda

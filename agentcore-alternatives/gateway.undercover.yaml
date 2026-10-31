@@ -1,0 +1,49 @@
+# The gateway in front of the real UnderCover build (from Week 3 Day 3), on the laptop, in place of
+# AgentCore Gateway. Tool names are AgentCore's (`undercover-app___pay_claim`,
+# `undercover-context___lookup_term`), so the claim agent's tools, the policy and the dashboard's
+# step names stay as they are. Run beside `npm run dev`:
+#
+#   uv run --env-file ../.env -m diy_gateway --config gateway.undercover.yaml --port 8210
+#
+# and set UNDERCOVER_GATEWAY_URL=http://127.0.0.1:8210/mcp for the agent. The course's agent signs
+# its MCP requests with SigV4 for "bedrock-agentcore"; with this gateway it sends a bearer token
+# instead (GATEWAY_CLAIM_AGENT_KEY), or, on AWS, SigV4 for "lambda" (examples/aws_native).
+name: undercover-gateway
+separator: "___"
+
+inbound:
+  mode: tokens
+  api_keys:
+    - principal_id: claim-agent
+      principal_type: Agent
+      secret: env:GATEWAY_CLAIM_AGENT_KEY
+
+targets:
+  - name: undercover-app
+    type: openapi
+    base_url: http://127.0.0.1:8000
+    spec_url: http://127.0.0.1:8000/api/agent/openapi.json
+    credentials:
+      type: api_key
+      header: X-API-Key
+      secret: env:UNDERCOVER_API_KEY            # the app's agent key, already in UnderCover's .env
+
+  - name: undercover-context
+    type: mcp
+    url: http://127.0.0.1:8006/mcp
+    credentials:
+      type: none
+
+policy:
+  engine: cedar
+  mode: log_only                                 # watch the decisions, then switch to enforce
+  policies_file: policies/gateway.cedar
+  # schema_file: generate one for UnderCover's real tools (cedar-for-agents' MCP schema generator);
+  # policies/gateway.schema.json describes the demo's stand-ins, not UnderCover's inputs.
+  namespace: Mcp
+  resource_id: undercover-gateway
+  denial: protocol_error                         # the agent already treats this as AgentCore's refusal
+
+audit:
+  destination: stdout
+  log_argument_values: false

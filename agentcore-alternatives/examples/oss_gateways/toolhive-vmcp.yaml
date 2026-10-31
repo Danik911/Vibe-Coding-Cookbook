@@ -1,0 +1,52 @@
+# ToolHive Virtual MCP (Stacklok, Apache-2.0, Go, Kubernetes operator): the only open-source
+# gateway found with native Cedar, including conditions on tool arguments (resource.arg_*).
+#
+# Syntax from the ToolHive docs as of 31 Oct 2026 (v0.59.0). NOT executed in this repo; test it.
+#   https://docs.stacklok.com/toolhive/guides-vmcp/authentication
+#   https://github.com/stacklok/toolhive/blob/main/docs/authz.md
+#
+# Differences from AgentCore and from diy_gateway:
+# - Kubernetes only (EKS on AWS). No OpenAPI-to-MCP: wrap the app with FastMCP.from_openapi first.
+# - Arguments arrive as arg_<name>; fractional amounts are UNVERIFIED in Cedar here, so use cents.
+# - No log-only mode found. A forbid that errors doesn't apply: make the argument required.
+apiVersion: toolhive.stacklok.dev/v1beta1
+kind: MCPExternalAuthConfig
+metadata:
+  name: app-api-key
+  namespace: toolhive-system
+spec:
+  type: headerInjection
+  headerInjection:
+    headerName: X-API-Key
+    valueSecretRef:
+      name: undercover-app-key        # a Kubernetes Secret (External Secrets can sync it from Secrets Manager)
+      key: value
+---
+apiVersion: toolhive.stacklok.dev/v1beta1
+kind: VirtualMCPServer
+metadata:
+  name: undercover
+  namespace: toolhive-system
+spec:
+  groupRef:
+    name: undercover-group             # an MCPGroup holding the app's MCP wrapper and the context layer
+  incomingAuth:
+    type: oidc
+    oidcConfigRef:
+      name: vmcp-oidc
+      audience: https://gateway.example.com/mcp
+    authzConfig:
+      type: inline
+      inline:
+        policies:
+          - 'permit(principal, action == Action::"call_tool", resource);'
+          - |
+            forbid(principal, action == Action::"call_tool", resource == Tool::"pay_claim")
+            when { resource.arg_amount > 1000 };
+  outgoingAuth:
+    source: inline
+    backends:
+      undercover-app:
+        type: externalAuthConfigRef
+        externalAuthConfigRef:
+          name: app-api-key

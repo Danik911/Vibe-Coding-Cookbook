@@ -1,0 +1,165 @@
+# The self-built gateway on AWS, without AgentCore (AWS SAM). Review it before deploying:
+# it creates a Lambda function with an IAM-protected Function URL, its role and log group, and an
+# Amazon Verified Permissions policy store with the gateway's policies. Nothing here has been
+# deployed by this repo; see README.md for the commands, the cost notes and the teardown.
+#
+#   uv run examples/aws_native/package_lambda.py      # builds dist/gateway.zip
+#   sam deploy --guided --template-file examples/aws_native/template.yaml
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: MCP tool gateway (Lambda + IAM + Secrets Manager + Verified Permissions), no AgentCore
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: undercover
+    AllowedPattern: "[a-z][a-z0-9-]{1,30}"
+  AppUrl:
+    Type: String
+    Description: The app's base URL, with no trailing slash (its Lambda Function URL, for example)
+  ContextUrl:
+    Type: String
+    Description: The context layer's MCP endpoint, ending in /mcp (an AWS_IAM Function URL)
+  ContextFunctionName:
+    Type: String
+    Description: The context layer's Lambda function, which the gateway's role may invoke
+  AppKeySecretArn:
+    Type: String
+    Description: The Secrets Manager secret holding the app's agent API key
+  AgentRoleName:
+    Type: String
+    Description: The IAM role the claim agent runs as; only it is permitted the app's tools
+  PolicyMode:
+    Type: String
+    Default: log_only
+    AllowedValues: ["off", log_only, enforce]
+
+Resources:
+  PolicyStore:
+    Type: AWS::VerifiedPermissions::PolicyStore
+    Properties:
+      Description: !Sub "${ProjectName} gateway policies"
+      ValidationSettings:
+        Mode: STRICT
+      Schema:
+        CedarJson: '{"Mcp":{"entityTypes":{"Agent":{"shape":{"type":"Record","attributes":{"scopes":{"type":"Set","element":{"type":"String"},"required":false}}}},"User":{"shape":{"type":"Record","attributes":{"scopes":{"type":"Set","element":{"type":"String"},"required":false}}}},"IamEntity":{"shape":{"type":"Record","attributes":{"account":{"type":"String"}}}},"Gateway":{"shape":{"type":"Record","attributes":{}}}},"actions":{"undercover-app":{},"undercover-context":{},"undercover-app___get_claim":{"memberOf":[{"id":"undercover-app"}],"appliesTo":{"principalTypes":["Agent","User","IamEntity"],"resourceTypes":["Gateway"],"context":{"type":"Record","attributes":{"target":{"type":"String"},"tool":{"type":"String"},"input":{"type":"Record","attributes":{"claim_id":{"type":"String"}}}}}}},"undercover-app___get_policy":{"memberOf":[{"id":"undercover-app"}],"appliesTo":{"principalTypes":["Agent","User","IamEntity"],"resourceTypes":["Gateway"],"context":{"type":"Record","attributes":{"target":{"type":"String"},"tool":{"type":"String"},"input":{"type":"Record","attributes":{"policy_id":{"type":"String"}}}}}}},"undercover-app___get_claim_history":{"memberOf":[{"id":"undercover-app"}],"appliesTo":{"principalTypes":["Agent","User","IamEntity"],"resourceTypes":["Gateway"],"context":{"type":"Record","attributes":{"target":{"type":"String"},"tool":{"type":"String"},"input":{"type":"Record","attributes":{"customer_id":{"type":"String"}}}}}}},"undercover-app___calculate_payout":{"memberOf":[{"id":"undercover-app"}],"appliesTo":{"principalTypes":["Agent","User","IamEntity"],"resourceTypes":["Gateway"],"context":{"type":"Record","attributes":{"target":{"type":"String"},"tool":{"type":"String"},"input":{"type":"Record","attributes":{"claim_id":{"type":"String"},"amount_claimed":{"type":"Extension","name":"decimal"},"deductible":{"type":"Extension","name":"decimal"}}}}}}},"undercover-app___record_decision":{"memberOf":[{"id":"undercover-app"}],"appliesTo":{"principalTypes":["Agent","User","IamEntity"],"resourceTypes":["Gateway"],"context":{"type":"Record","attributes":{"target":{"type":"String"},"tool":{"type":"String"},"input":{"type":"Record","attributes":{"claim_id":{"type":"String"},"decision":{"type":"String"},"payout":{"type":"Extension","name":"decimal"},"section":{"type":"String"},"reason":{"type":"String"}}}}}}},"undercover-app___pay_claim":{"memberOf":[{"id":"undercover-app"}],"appliesTo":{"principalTypes":["Agent","User","IamEntity"],"resourceTypes":["Gateway"],"context":{"type":"Record","attributes":{"target":{"type":"String"},"tool":{"type":"String"},"input":{"type":"Record","attributes":{"claim_id":{"type":"String"},"amount":{"type":"Extension","name":"decimal","required":false}}}}}}},"undercover-context___lookup_term":{"memberOf":[{"id":"undercover-context"}],"appliesTo":{"principalTypes":["Agent","User","IamEntity"],"resourceTypes":["Gateway"],"context":{"type":"Record","attributes":{"target":{"type":"String"},"tool":{"type":"String"},"input":{"type":"Record","attributes":{"term":{"type":"String"}}}}}}},"undercover-context___get_plan":{"memberOf":[{"id":"undercover-context"}],"appliesTo":{"principalTypes":["Agent","User","IamEntity"],"resourceTypes":["Gateway"],"context":{"type":"Record","attributes":{"target":{"type":"String"},"tool":{"type":"String"},"input":{"type":"Record","attributes":{"plan":{"type":"String"}}}}}}}}}}'
+
+  AgentAppToolsPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    Properties:
+      PolicyStoreId: !Ref PolicyStore
+      Definition:
+        Static:
+          Description: The claim agent's role may call the app's tools
+          Statement: !Sub |
+            permit (
+              principal == Mcp::IamEntity::"arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AgentRoleName}",
+              action in Mcp::Action::"undercover-app",
+              resource == Mcp::Gateway::"undercover-gateway"
+            );
+
+  ContextReadPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    Properties:
+      PolicyStoreId: !Ref PolicyStore
+      Definition:
+        Static:
+          Description: Every authenticated caller may read the context layer
+          Statement: |
+            permit (
+              principal,
+              action in Mcp::Action::"undercover-context",
+              resource == Mcp::Gateway::"undercover-gateway"
+            );
+
+  PaymentLimitPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    Properties:
+      PolicyStoreId: !Ref PolicyStore
+      Definition:
+        Static:
+          Description: No payment over $1,000 through the gateway
+          Statement: |
+            forbid (
+              principal,
+              action == Mcp::Action::"undercover-app___pay_claim",
+              resource
+            )
+            when { context.input has amount && context.input.amount.greaterThan(decimal("1000.0")) };
+
+  PaymentNeedsAmountPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    Properties:
+      PolicyStoreId: !Ref PolicyStore
+      Definition:
+        Static:
+          Description: A payment with no amount is refused
+          Statement: |
+            forbid (
+              principal,
+              action == Mcp::Action::"undercover-app___pay_claim",
+              resource
+            )
+            unless { context.input has amount };
+
+  GatewayLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${ProjectName}-gateway"
+      RetentionInDays: 7
+
+  GatewayFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-gateway"
+      CodeUri: ../../dist/gateway.zip
+      Handler: diy_gateway.lambda_handler.handler
+      Runtime: python3.12
+      Architectures: [x86_64]
+      MemorySize: 512
+      Timeout: 30
+      LoggingConfig:
+        LogGroup: !Ref GatewayLogs
+      Environment:
+        Variables:
+          GATEWAY_CONFIG: gateway.aws.yaml
+          UNDERCOVER_API: !Ref AppUrl
+          UNDERCOVER_CONTEXT: !Ref ContextUrl
+          APP_KEY_SECRET_ARN: !Ref AppKeySecretArn
+          POLICY_STORE_ID: !Ref PolicyStore
+          POLICY_MODE: !Ref PolicyMode
+      FunctionUrlConfig:
+        AuthType: AWS_IAM
+      Policies:
+        - Statement:
+            - Sid: AppKey
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref AppKeySecretArn
+            - Sid: Policy
+              Effect: Allow
+              Action: verifiedpermissions:IsAuthorized
+              Resource: !GetAtt PolicyStore.Arn
+            - Sid: ContextLayer
+              Effect: Allow
+              Action:
+                - lambda:InvokeFunctionUrl
+                - lambda:InvokeFunction
+              Resource: !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ContextFunctionName}"
+      Tags:
+        project: !Ref ProjectName
+
+  AgentMayCallTheGateway:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GatewayFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${AgentRoleName}"
+      FunctionUrlAuthType: AWS_IAM
+
+Outputs:
+  GatewayUrl:
+    Description: The gateway's MCP endpoint (add /mcp); callers sign with SigV4 for the service "lambda"
+    Value: !GetAtt GatewayFunctionUrl.FunctionUrl
+  PolicyStoreId:
+    Value: !Ref PolicyStore

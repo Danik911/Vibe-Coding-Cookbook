@@ -1,0 +1,47 @@
+# The gateway on AWS Lambda, without AgentCore: the AgentCore Gateway + Policy + Identity setup
+# from labs/week3day2_lab2.ipynb and labs/week3day3.ipynb, rebuilt from generally available services.
+#
+# - Inbound IAM: the Function URL has AuthType AWS_IAM, so AWS checks each caller's SigV4
+#   signature before the gateway runs (as AgentCore Gateway's AWS_IAM authorizer).
+# - Outbound: the app's key from Secrets Manager (as AgentCore Identity's API key provider), and
+#   SigV4 with the gateway's own role to the context layer's AWS_IAM Function URL.
+# - Policy: Cedar in Amazon Verified Permissions, log-only first (as AgentCore Policy).
+#
+# ${NAME} values come from the function's environment (template.yaml sets them).
+name: undercover-gateway
+separator: "___"
+
+inbound:
+  mode: iam
+
+targets:
+  - name: undercover-app
+    type: openapi
+    base_url: ${UNDERCOVER_API}
+    spec_url: ${UNDERCOVER_API}/api/agent/openapi.json
+    credentials:
+      type: api_key
+      header: X-API-Key
+      secret: aws-secretsmanager:${APP_KEY_SECRET_ARN}
+
+  - name: undercover-context
+    type: mcp
+    url: ${UNDERCOVER_CONTEXT}
+    credentials:
+      type: sigv4
+      service: lambda
+
+policy:
+  engine: verified_permissions
+  mode: ${POLICY_MODE}
+  namespace: Mcp
+  resource_id: undercover-gateway
+  denial: protocol_error
+  verified_permissions:
+    policy_store_id: ${POLICY_STORE_ID}
+
+audit:
+  destination: stdout
+  log_argument_values: false
+  emf_metrics: true
+  metrics_namespace: UnderCover/Gateway

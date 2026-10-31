@@ -1,0 +1,172 @@
+{
+  "Mcp": {
+    "entityTypes": {
+      "Agent": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "scopes": { "type": "Set", "element": { "type": "String" }, "required": false }
+          }
+        }
+      },
+      "User": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "scopes": { "type": "Set", "element": { "type": "String" }, "required": false }
+          }
+        }
+      },
+      "IamEntity": {
+        "shape": { "type": "Record", "attributes": { "account": { "type": "String" } } }
+      },
+      "Gateway": { "shape": { "type": "Record", "attributes": {} } }
+    },
+    "actions": {
+      "undercover-app": {},
+      "undercover-context": {},
+      "undercover-app___get_claim": {
+        "memberOf": [{ "id": "undercover-app" }],
+        "appliesTo": {
+          "principalTypes": ["Agent", "User", "IamEntity"],
+          "resourceTypes": ["Gateway"],
+          "context": {
+            "type": "Record",
+            "attributes": {
+              "target": { "type": "String" },
+              "tool": { "type": "String" },
+              "input": { "type": "Record", "attributes": { "claim_id": { "type": "String" } } }
+            }
+          }
+        }
+      },
+      "undercover-app___get_policy": {
+        "memberOf": [{ "id": "undercover-app" }],
+        "appliesTo": {
+          "principalTypes": ["Agent", "User", "IamEntity"],
+          "resourceTypes": ["Gateway"],
+          "context": {
+            "type": "Record",
+            "attributes": {
+              "target": { "type": "String" },
+              "tool": { "type": "String" },
+              "input": { "type": "Record", "attributes": { "policy_id": { "type": "String" } } }
+            }
+          }
+        }
+      },
+      "undercover-app___get_claim_history": {
+        "memberOf": [{ "id": "undercover-app" }],
+        "appliesTo": {
+          "principalTypes": ["Agent", "User", "IamEntity"],
+          "resourceTypes": ["Gateway"],
+          "context": {
+            "type": "Record",
+            "attributes": {
+              "target": { "type": "String" },
+              "tool": { "type": "String" },
+              "input": { "type": "Record", "attributes": { "customer_id": { "type": "String" } } }
+            }
+          }
+        }
+      },
+      "undercover-app___calculate_payout": {
+        "memberOf": [{ "id": "undercover-app" }],
+        "appliesTo": {
+          "principalTypes": ["Agent", "User", "IamEntity"],
+          "resourceTypes": ["Gateway"],
+          "context": {
+            "type": "Record",
+            "attributes": {
+              "target": { "type": "String" },
+              "tool": { "type": "String" },
+              "input": {
+                "type": "Record",
+                "attributes": {
+                  "claim_id": { "type": "String" },
+                  "amount_claimed": { "type": "Extension", "name": "decimal" },
+                  "deductible": { "type": "Extension", "name": "decimal" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "undercover-app___record_decision": {
+        "memberOf": [{ "id": "undercover-app" }],
+        "appliesTo": {
+          "principalTypes": ["Agent", "User", "IamEntity"],
+          "resourceTypes": ["Gateway"],
+          "context": {
+            "type": "Record",
+            "attributes": {
+              "target": { "type": "String" },
+              "tool": { "type": "String" },
+              "input": {
+                "type": "Record",
+                "attributes": {
+                  "claim_id": { "type": "String" },
+                  "decision": { "type": "String" },
+                  "payout": { "type": "Extension", "name": "decimal" },
+                  "section": { "type": "String" },
+                  "reason": { "type": "String" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "undercover-app___pay_claim": {
+        "memberOf": [{ "id": "undercover-app" }],
+        "appliesTo": {
+          "principalTypes": ["Agent", "User", "IamEntity"],
+          "resourceTypes": ["Gateway"],
+          "context": {
+            "type": "Record",
+            "attributes": {
+              "target": { "type": "String" },
+              "tool": { "type": "String" },
+              "input": {
+                "type": "Record",
+                "attributes": {
+                  "claim_id": { "type": "String" },
+                  "amount": { "type": "Extension", "name": "decimal", "required": false }
+                }
+              }
+            }
+          }
+        }
+      },
+      "undercover-context___lookup_term": {
+        "memberOf": [{ "id": "undercover-context" }],
+        "appliesTo": {
+          "principalTypes": ["Agent", "User", "IamEntity"],
+          "resourceTypes": ["Gateway"],
+          "context": {
+            "type": "Record",
+            "attributes": {
+              "target": { "type": "String" },
+              "tool": { "type": "String" },
+              "input": { "type": "Record", "attributes": { "term": { "type": "String" } } }
+            }
+          }
+        }
+      },
+      "undercover-context___get_plan": {
+        "memberOf": [{ "id": "undercover-context" }],
+        "appliesTo": {
+          "principalTypes": ["Agent", "User", "IamEntity"],
+          "resourceTypes": ["Gateway"],
+          "context": {
+            "type": "Record",
+            "attributes": {
+              "target": { "type": "String" },
+              "tool": { "type": "String" },
+              "input": { "type": "Record", "attributes": { "plan": { "type": "String" } } }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+build/
+dist/
+*.audit.jsonl
+
+# Local-only: demo keys (examples/make_env.py), virtualenvs, caches
+.env
+.venv/
+.ruff_cache/
+__pycache__/
+*.pyc

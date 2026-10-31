@@ -1,0 +1,57 @@
+# The gateway for the local demo: `uv run examples/run_demo.py` starts it with the two stand-ins.
+# Secrets are references, never values: `env:NAME` or `aws-secretsmanager:<id or ARN>[#json-key]`.
+name: undercover-gateway
+separator: "___"
+
+inbound:
+  mode: tokens                      # tokens | iam | none
+  api_keys:                         # machine callers: the key is their bearer token
+    - principal_id: claim-agent
+      principal_type: Agent
+      secret: env:GATEWAY_CLAIM_AGENT_KEY
+  # jwt:                            # human callers, or OAuth clients (Cognito client credentials)
+  #   jwks_uri: https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json
+  #   issuer: https://<project-ref>.supabase.co/auth/v1
+  #   audience: authenticated
+  #   principal_type: User
+  #   principal_claim: sub
+  #   attribute_claims: [email, role]   # with schema_file set, declare these on User in the schema too
+
+targets:
+  - name: undercover-app
+    type: openapi
+    base_url: http://127.0.0.1:8200
+    spec_url: http://127.0.0.1:8200/api/agent/openapi.json
+    include_operations:             # an allow-list on top of the document
+      - get_claim
+      - get_policy
+      - get_claim_history
+      - calculate_payout
+      - record_decision
+      - pay_claim
+    credentials:
+      type: api_key                 # as AgentCore Identity's API key credential provider
+      header: X-API-Key
+      secret: env:DEMO_APP_API_KEY
+
+  - name: undercover-context
+    type: mcp
+    url: http://127.0.0.1:8206/mcp
+    credentials:
+      type: none                    # on Lambda with AWS_IAM auth: {type: sigv4, service: lambda}
+
+policy:
+  engine: cedar                     # cedar (in-process) | verified_permissions (Amazon Verified Permissions)
+  mode: enforce                     # off | log_only | enforce
+  policies_file: policies/gateway.cedar
+  schema_file: policies/gateway.schema.json   # optional: strict tool and argument shapes; unknown tools are refused
+  namespace: Mcp
+  resource_id: undercover-gateway
+  denial: protocol_error            # protocol_error (as AgentCore) | tool_error
+  hide_unpermitted_tools: true
+  deny_on_evaluation_errors: true
+
+audit:
+  destination: stdout
+  log_argument_values: true         # the demo's arguments are fictional; keep false for real data
+  emf_metrics: false
